@@ -1,0 +1,306 @@
+---
+title: "MS4218 Assignment"
+author: "Sean Mortimer 17236444"
+date: "30/04/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(TSA)
+library(tseries)
+library(pander)
+
+setwd("C:/Users/seanm/Desktop/MS4218 TSA")
+GDP <- read.csv("C:/Users/seanm/Desktop/MS4218 TSA/GDP pcUS.csv")
+
+```
+
+```{r, echo = FALSE}
+
+# Load data as a ts object
+GDP <- ts(GDP, frequency = 1, start=c(1960), end = c(2019))
+
+
+# Set training dataset for analysis by removing 10% of last observations
+train <- head(GDP, -6)
+train <- ts(train, frequency = 1, start=c(1960), end = c(2013))
+
+GDP_PC <- train
+
+lnGDP_PC <- log(train)
+
+
+```
+
+## Introduction.
+
+The data I have chosen to analyse for forecasting is the gross domestic product (GDP) per capita in the USA from 1960 to 2019 measured in the United States dollar (USD). GDP per capita measures the sum of marketed goods and services produced a national territory, averaged across all those that live there. In economics, this is used as measuring a nations standard of living. 
+
+I accessed this data on The World Bank.  
+<https://data.worldbank.org/indicator/NY.GDP.PCAP.CD?locations=US>
+
+For the purpose of checking the accuracy of my forecast, I completed all further statistical analysis on a training set which makes up 90% of the original time series. The model derived from this will then be used to predict the GDP per capita from 2014 to 2019 and this will be compared graphically to the real values i.e. the test set. 
+
+## Transformation
+### Stability
+
+A requirement for analysing time series is stationarity. This implies that the time series must have constant mean and variance without any trend or seasonality. A way for checking for these requirements is by visually inspecting the plotted series shown below in Fig1. 
+
+#### Fig1.
+```{r, echo = FALSE}
+
+plot(GDP,main = "GDP per capita in USA", ylab = "GDP", xlab = "Years")
+
+```
+
+We can see a clear strong upward trend in GDP per capita for whole duration of the time series. The only real dip took place in 2008 and 2009 which signifies the 2008 global financial crisis. This will play a factor in further analysis. Given that the data ranges from below $10,000 to over $60,000 implies that the yearly variance has changed over time. This indicated a possible stability issue so I suspected a transformation may be needed. To check this, I decided to run the Box-Cox test shown in Fig2.
+
+#### Fig2.
+```{r, echo = FALSE, warning = FALSE}
+
+BC <- BoxCox.ar(GDP_PC, lambda=seq(-5,16,1) )
+
+```
+
+After playing around with different intervals and steps for lambda, I finally found a combination that was valid for visualising. However, it failed to converge, so I decided to log transform my dataset as it is the recommended step to take in this scenario.
+
+I can then check the Shapiro-Wilk test for normality between the two series to see if the log transform improved it. The Shapiro-Wilk test tests for normality in the data. The null hypothesis states that the data is normally distributed.
+
+```{r, echo = FALSE}
+
+shapiro.test(GDP_PC)
+shapiro.test(lnGDP_PC)
+
+```
+
+The p-values for the original and log transformed are both less than 0.05 (0.0004 and 0.007 respectively). Therefore, I reject the null hypothesis that both data sets are normally distributed. However, there is a slight improvement in the log transformed series albeit, very little.
+
+Now that stability of my time series has been accounted for, I can now proceed to check for stationarity i.e. no trend or seasonality exists. As mentioned, a s strong upward trend was visible in Fig1. so, I will run statistical tests to confirm this. Firstly, I will look at the autocorrelation function estimation (ACF). This will indicate any autocorrelation between lags of the time series. If the ACF decays slowly before cutting off, a trend is present.
+
+### Stationarity
+
+#### Fig3.
+```{r, echo = FALSE}
+
+acf(lnGDP_PC)
+
+```
+
+As we can see from Fig3. above, the ACF has many significant lags that decay slowly before cutting off after the 13th lag. This suggests that a trend is present in my data which coincides with my visual examination. To be even more sure, I will use the Augmented Dickey-Fuller test which is a unit root test.  
+
+```{r, echo = FALSE}
+
+adf.test(lnGDP_PC)
+
+```
+
+The null hypothesis of this states that a unit root exists while the alternative hypothesis states that the data is stationary. The resulting p-value is 0.9891 which is much greater than 0.05 so I can confidently fail to reject the null hypothesis. After using three different methods of checking for stationarity, visually, ACF, and ADF test, I can conclude that my data is in fact non-stationary and therefore, trend differencing is required. 
+
+#### Fig4.
+```{r, echo = FALSE}
+
+dlnGDP_PC <- diff(lnGDP_PC)
+
+plot(dlnGDP_PC,main = "1st Differenced GDP per capita in USA", ylab = "1st diff GDP", xlab = "Years")
+
+```
+
+Fig4. above shows the plot of the first trend differenced version of the time series. It can be seen that a trend still exists albeit it has been reduced significantly. With this, I suspect a second difference may be required. The magnitude of the effects of the 2008 financial crisis as mentioned earlier is now becoming more predominant as we can see. It will be interesting to see how this effects the forecasted values against the real values at the end. 
+
+Like  I did previously, I will check the ACF and the ADF test for further examination.
+
+#### Fig5.
+```{r, echo=FALSE}
+
+acf(dlnGDP_PC)
+
+```
+
+Similarly, to what was seen before, the lags decay at a slightly faster rate whereby it cuts off after 8th lag. This coincides with my visual inspection as it suggests that a trend is still present even though it has been reduced.
+
+```{r, echo = FALSE}
+
+adf.test(dlnGDP_PC)
+
+```
+
+The p-value of 0.1588 is greater than 0.05 so once again, I fail to reject the null hypothesis that a unit root exists. Therefore, I can confirm that a second trend difference is required. 
+
+#### Fig6.
+```{r, echo = FALSE}
+
+d2lnGDP_PC <- diff(diff(lnGDP_PC))
+
+plot(d2lnGDP_PC,main = "2nd Differenced GDP per capita in USA", ylab = "1st diff GDP", xlab = "Years")
+
+```
+
+The plot shown in Fig6. immediately looks to be more stationary. The mean and variance look to be fairly constant throughout the majority of the time series with an exception of the early 1980’s. Once again, I will continue to check the ACF and the ADF test to statistically support my suspicion of stationarity.
+
+#### Fig7.
+```{r, echo = FALSE}
+
+acf(d2lnGDP_PC)
+
+```
+
+The ACF shown above does not contain any decaying lags which indicates that the trend has been removed. There is once significant lag at lag 1 indicating that the series is not random walk so it is viable for forecast analysis. 
+
+```{r, echo = FALSE, warning = FALSE}
+
+adf.test(d2lnGDP_PC)
+
+```
+
+The p-value of 0.01 is less than 0.05 so I fail to reject the null hypothesis. This along with the ACF and visual checks, I can now confidently say that my series is now stationary. Seasonality can only exist in data sets with periods greater than one.
+
+## Determining the Model
+
+Now that the time series has been made stationary, I can now identify how many autoregressive (AR) and moving average (MA) components are included in the model. To find the order for the MA components (q), the ACF is used. The partial autocorrelation function (PACF) is then used to find the order of the AR components (p). This is shown in Fig8. below.
+
+#### Fig8.
+```{r, echo = FALSE, fig.show="hold", out.width="50%"}
+
+acf(d2lnGDP_PC)
+pacf(d2lnGDP_PC)
+
+```
+
+The lags for the ACF cut off after the first lag so I expect my q to be 1. The lags for the PACF also cut off after the first lag. However, the second lag is very close to the confidence interval so I will check models with q as 1 and 2. The extended autocorrelation function (EACF) is not used as both the ACF and PACF do not decay. I expect my model to be either:
+
+Model1: ARIMA(1,2,1)  
+Model2: ARIMA(1,2,2)
+
+Firstly, I checked which of these models would be the best based of AIC values.
+
+````{r, echo = FALSE}
+
+# Main 2 models to look at based off ACF and PACF
+arima(train, order=c(1,2,1)) # arima(1,2,1)
+
+arima(train, order=c(2,2,1)) # arima(2,2,1)
+
+
+````
+
+The ARIMA(1,2,1) has an AIC of 803.47 and the ARIMA(2,2,1) has an AIC of 803.27. The rule of thumb is that models with AIC value within 2 points of each other can both be used.
+
+I also decided to check further potential models using the armasubsets function. However, I decided to disregard these models as the best two has worse AIC’s and more parameters than the two models already chosen. The only potential model found here was the ARIMA(0,2,2), but this did not coincide with the PACF result and the residuals were found to be worse than the ARIMA(1,2,1) and ARIMA(1,2,2) models. This is shown below.
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+
+d2lnGDP_PCsub <- armasubsets(d2lnGDP_PC, nar=12, nma=12)
+plot(d2lnGDP_PCsub)
+
+```
+
+Here, the best models are ranked vertically from best to worst whereby the model is read horizontally. The best models with their AIC's are shown below.
+
+```{r, echo = FALSE}
+arima(train, order=c(0,2,11)) # 806.61
+arima(train, order=c(0,2,12)) # 808.4
+arima(train, order=c(1,2,12)) # 809.9
+arima(train, order=c(0,2,2)) # 802.78
+arima(train, order=c(1,2,2)) # 804.28
+
+```
+
+I decided to disregard these models as the best two have worse AIC’s and more parameters than the two models already chosen. 
+
+The only potential model found here was the ARIMA(0,2,2), but this did not coincide with the PACF result and the residuals were found to be worse than the ARIMA(1,2,1) and ARIMA(1,2,2) models.
+```{r, echo = FALSE}
+
+M2 <- arima(train, order=c(0,2,2))
+tsdiag(M2) # ACF is close to significant and some p-values are very low
+
+```
+```{r, include = FALSE}
+
+# Based off EACF (not included because later models would be worse and ACF and PACF don't decay)
+arima(train, order=c(0,2,0)) # 810.43
+arima(train, order=c(1,2,0)) # 811.43
+arima(train, order=c(0,2,1)) # 809.69
+arima(train, order=c(1,2,1)) # 803.47
+arima(train, order=c(2,2,1)) # 803.27
+arima(train, order=c(3,2,0)) # 809.86
+arima(train, order=c(3,2,1)) # 803.16
+arima(train, order=c(4,2,0)) # 805.26
+arima(train, order=c(4,2,1)) # 803.1
+arima(train, order=c(5,2,0)) # 803.22
+
+```
+
+Now that I have chosen two potential models based on AIC values, I will decide on which is the best one based on residuals. I expect to pick the ARIMA(1,2,1) model if it passes the residual diagnostics as it has less parameters than the other model.
+
+I will check this by firstly examining the Shapiro-Wilks test. 
+
+```{r, echo = FALSE}
+
+Model <- arima(train, order=c(1,2,1))
+Model1res <- residuals(Model)
+
+shapiro.test(Model1res) # less than 0.05 - further checks
+
+Model2 <- arima(train, order=c(2,2,1))
+Model2res <- residuals(Model2)
+
+shapiro.test(Model2res)
+
+```
+
+The Shapiro-Wilk test here tests for normality between residuals. The null hypothesis states that the residuals are normally distributed. Both models produce p-values much less than 0.05 so I reject the null hypothesis that the residuals are normally distributed for both models. However, there is a slight improvement for the ARIMA(2,2,1) model from 0.000002 to 0.000005. This slight improvement is highly insignificant in determining which model is the better fit. The reason for these results is displayed in the Fig9. below. 
+
+#### Fig9.
+```{r, echo = FALSE, fig.show="hold", out.width="50%"}
+
+qqnorm(Model1res); qqline(Model1res); # A nice few off the line;
+qqnorm(Model2res); qqline(Model2res);
+
+```
+
+On both plots, we can see a few points that are not on the line of best fit and there are approximately three major outliers. These outliers are most likely due to the 2008 financial crisis as mentioned before when the standard of living in the USA dropped significantly.
+
+I will look at further residual diagnostics to check for normality. Fig 10. below are results for the ARIMA(1,2,1) model.
+
+#### Fig10.
+```{r, echo = FALSE}
+
+tsdiag(Model)
+
+```
+
+The standardised residuals measure the strength of the difference between observed and expected values. The significant decrease in GDP per capita was as a direct impact of the 2008 financial crisis. The ACF contains no significant lags indicating that residuals are white noise. All of the p-values for the Ljung-Box statistic are greater than 0.05 although some values are very close to this lower bound. 
+
+#### Fig11.
+```{r, echo = FALSE}
+
+tsdiag(Model2)
+
+```
+
+Fig11. above display the residual diagnostics regarding the ARIMA(2,2,1) model. Everything seems generally similar with the standardised residuals and the ACF of residuals. However, an improvement in the p-values for the Ljung-Box test is evident. 
+
+These results regarding the residuals imply that both models are viable for forecasting. Even though the ARIMA(2,2,1) model has slightly more normal residuals, I will choose the ARIMA(1,2,1) model instead as it contains less parameters. I am able to do this because the AIC’s for both models were only a 0.2 difference from each other.
+
+I can now proceed to forecast using the ARIMA(1,2,1) model i.e. 1 AR component, 1 MA component and integrated at second order due to two differences being required.
+
+## Forecast
+#### Fig12.
+```{r, echo = FALSE}
+
+test <- tail(GDP, -54, round = 3)
+test <- ts(test, frequency = 1, start=c(2014), end = c(2019) )
+
+plot(Model, n.ahead = 6, ylab = "GDP")
+lines(test, col=2)
+
+```
+
+The white circles from 2014 to 2019 represent the values of the predictions made from the ARIMA(1,2,1) model that was formed from the black line with the circles before that i.e. the training set. The dashed lines from 2014 to 2019 represent the upper and lower bounds of the confidence interval of the predictions. The red line from 2014 to 2019 are the real values i.e. the test set. What I am interested in is if the real values fall within the confidence interval and how well it compares to the real values. Firstly, all of the real values fall within the confidence interval indicating the model is a good fit. Furthermore, the first 3 predictions seem to be relatively accurate to the real values before diverging around 2017 onwards. This implies that the economic recovery in the USA regarding the GDP per capita was better than slightly better than what was predicted by the model.
+
+## Conclusion
+
+This analysis aimed to create a suitable model for the purpose of forecasting the GDP per capita in the USA from 2014 to 2019. I did this by firstly, stabilising my data through a log transformation. I then second differenced my data to make it stationary so that an accurate model could be fitted. With the help of the ACF, PACF, AIC values and residual diagnostics, the ARIMA(1,2,1) model was used for forecasting. This proved to be a good fit as the real values i.e. the test set fell within the prediction’s confidence interval. After 2017 the real values diverged upwards compared to the predicted values signalling that my model underestimated the economic recovery of the USA after the 2008 financial crisis.
+
+
